@@ -1,0 +1,315 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Movie Recommendation System</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+            background-color: #f8f9fa;
+        }
+        .movie-card {
+            margin-bottom: 1rem;
+            transition: transform 0.3s;
+        }
+        .movie-card:hover {
+            transform: scale(1.03);
+        }
+        .rating-stars {
+            cursor: pointer;
+        }
+        .star {
+            font-size: 24px;
+            color: #ccc;
+        }
+        .star.filled {
+            color: #ffc107;
+        }
+        .rating-count {
+            background-color: #007bff;
+            color: white;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 10px;
+        }
+        .result-container {
+            display: none;
+        }
+        .recommendation-card {
+            margin-bottom: 1rem;
+            border-left: 4px solid #28a745;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="text-center mb-5">
+            <h1 class="display-4">Movie Recommendation System</h1>
+            <p class="lead">Rate movies you've watched and get personalized recommendations</p>
+        </header>
+
+        <div class="row">
+            <div class="col-md-8 offset-md-2">
+                <div class="input-group mb-4">
+                    <input type="text" id="movie-search" class="form-control" placeholder="Search for movies...">
+                    <button class="btn btn-primary" type="button" id="search-button">Search</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-6">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-primary text-white">
+                        <h3 class="mb-0">Rate Movies</h3>
+                    </div>
+                    <div class="card-body">
+                        <p class="card-text">Rate at least 3 movies you've watched to get recommendations:</p>
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-end">
+                                <span class="rating-count" id="rating-count">0</span>
+                            </div>
+                        </div>
+                        <div id="movie-list" class="movie-selection">
+                            <!-- Movies will be loaded here -->
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <button id="get-recommendations" class="btn btn-success btn-lg w-100">Get Recommendations</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <div id="recommendations-container" class="result-container card shadow-sm">
+                    <div class="card-header bg-success text-white">
+                        <h3 class="mb-0">Your Personalized Recommendations</h3>
+                    </div>
+                    <div class="card-body">
+                        <ul class="nav nav-tabs" id="recommendationTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="cf-tab" data-bs-toggle="tab" data-bs-target="#cf-recommendations" type="button" role="tab">Collaborative Filtering</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="model-tab" data-bs-toggle="tab" data-bs-target="#model-recommendations" type="button" role="tab">Model-Based</button>
+                            </li>
+                        </ul>
+                        <div class="tab-content mt-3" id="recommendationTabContent">
+                            <div class="tab-pane fade show active" id="cf-recommendations" role="tabpanel">
+                                <div id="cf-results">
+                                    <!-- Collaborative filtering recommendations will be displayed here -->
+                                </div>
+                            </div>
+                            <div class="tab-pane fade" id="model-recommendations" role="tabpanel">
+                                <div id="model-results">
+                                    <!-- Model-based recommendations will be displayed here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Fetch all movies on page load
+            fetch('/static/movies.json')
+                .then(response => {
+                    if (!response.ok) {
+                        // If movies.json doesn't exist yet, just use the movies from the template
+                        return null;
+                    }
+                    return response.json();
+                })
+                .then(movies => {
+                    if (movies) {
+                        loadMovies(movies);
+                    }
+                })
+                .catch(error => console.error('Error loading movies:', error));
+
+            // Store user ratings
+            const userRatings = {};
+            
+            // Function to load movies into the selection panel
+            function loadMovies(movies) {
+                const movieListContainer = document.getElementById('movie-list');
+                movieListContainer.innerHTML = '';
+                
+                movies.forEach(movie => {
+                    const movieCard = document.createElement('div');
+                    movieCard.className = 'movie-card card mb-2';
+                    movieCard.innerHTML = `
+                        <div class="card-body">
+                            <h5 class="card-title">${movie.title}</h5>
+                            <p class="card-text"><small class="text-muted">${movie.genres}</small></p>
+                            <div class="rating-stars" data-movie-id="${movie.movieId}">
+                                <span class="star" data-rating="1">★</span>
+                                <span class="star" data-rating="2">★</span>
+                                <span class="star" data-rating="3">★</span>
+                                <span class="star" data-rating="4">★</span>
+                                <span class="star" data-rating="5">★</span>
+                            </div>
+                        </div>
+                    `;
+                    movieListContainer.appendChild(movieCard);
+                    
+                    // Add event listeners for rating stars
+                    const ratingStars = movieCard.querySelector('.rating-stars');
+                    const stars = ratingStars.querySelectorAll('.star');
+                    
+                    stars.forEach(star => {
+                        star.addEventListener('click', function() {
+                            const rating = parseInt(this.getAttribute('data-rating'));
+                            const movieId = ratingStars.getAttribute('data-movie-id');
+                            
+                            // Update UI
+                            stars.forEach(s => {
+                                const starRating = parseInt(s.getAttribute('data-rating'));
+                                if (starRating <= rating) {
+                                    s.classList.add('filled');
+                                } else {
+                                    s.classList.remove('filled');
+                                }
+                            });
+                            
+                            // Store rating
+                            userRatings[movieId] = rating;
+                            
+                            // Update the rating count
+                            updateRatingCount();
+                        });
+                    });
+                });
+            }
+            
+            // Update the rating count
+            function updateRatingCount() {
+                const count = Object.keys(userRatings).length;
+                document.getElementById('rating-count').textContent = count;
+            }
+            
+            // Get recommendations button
+            document.getElementById('get-recommendations').addEventListener('click', function() {
+                if (Object.keys(userRatings).length < 3) {
+                    alert('Please rate at least 3 movies for better recommendations.');
+                    return;
+                }
+                
+                // Send rating data to server
+                fetch('/recommend', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ ratings: userRatings }),
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        alert(data.error);
+                        return;
+                    }
+                    
+                    // Display recommendations
+                    displayRecommendations(data.collaborative_filtering, 'cf-results');
+                    displayRecommendations(data.model_based, 'model-results');
+                    
+                    // Show recommendations container
+                    document.getElementById('recommendations-container').style.display = 'block';
+                    
+                    // Scroll to recommendations
+                    document.getElementById('recommendations-container').scrollIntoView({ behavior: 'smooth' });
+                })
+                .catch(error => {
+                    console.error('Error getting recommendations:', error);
+                    alert('An error occurred while getting recommendations. Please try again.');
+                });
+            });
+            
+            // Display recommendations
+            function displayRecommendations(recommendations, containerId) {
+                const container = document.getElementById(containerId);
+                container.innerHTML = '';
+                
+                if (recommendations.length === 0) {
+                    container.innerHTML = '<p>No recommendations found. Try rating more movies.</p>';
+                    return;
+                }
+                
+                recommendations.forEach(movie => {
+                    const card = document.createElement('div');
+                    card.className = 'recommendation-card card mb-2';
+                    
+                    // Calculate star display for the predicted rating
+                    const scoreOutOf5 = movie.score > 5 ? 5 : movie.score;
+                    const fullStars = Math.floor(scoreOutOf5);
+                    const hasHalfStar = scoreOutOf5 - fullStars >= 0.5;
+                    
+                    let starsHtml = '';
+                    for (let i = 0; i < fullStars; i++) {
+                        starsHtml += '<span class="star filled">★</span>';
+                    }
+                    if (hasHalfStar) {
+                        starsHtml += '<span class="star half-filled">★</span>';
+                    }
+                    const emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0);
+                    for (let i = 0; i < emptyStars; i++) {
+                        starsHtml += '<span class="star">★</span>';
+                    }
+                    
+                    card.innerHTML = `
+                        <div class="card-body">
+                            <h5 class="card-title">${movie.title}</h5>
+                            <p class="card-text"><small class="text-muted">${movie.genres}</small></p>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div class="predicted-rating">
+                                    ${starsHtml}
+                                </div>
+                                <span class="badge bg-success">Score: ${movie.score.toFixed(1)}</span>
+                            </div>
+                        </div>
+                    `;
+                    
+                    container.appendChild(card);
+                });
+            }
+            
+            // Search functionality
+            document.getElementById('search-button').addEventListener('click', performSearch);
+            document.getElementById('movie-search').addEventListener('keyup', function(event) {
+                if (event.key === 'Enter') {
+                    performSearch();
+                }
+            });
+            
+            function performSearch() {
+                const searchTerm = document.getElementById('movie-search').value.toLowerCase();
+                const movieCards = document.querySelectorAll('.movie-card');
+                
+                movieCards.forEach(card => {
+                    const title = card.querySelector('.card-title').textContent.toLowerCase();
+                    const genres = card.querySelector('.card-text small').textContent.toLowerCase();
+                    
+                    if (title.includes(searchTerm) || genres.includes(searchTerm)) {
+                        card.style.display = 'block';
+                    } else {
+                        card.style.display = 'none';
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>
